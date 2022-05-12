@@ -1,4 +1,4 @@
-package smppserver
+package server
 
 import (
 	"bufio"

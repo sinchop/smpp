@@ -1,34 +1,35 @@
-package smppserver
+package server
 
 import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/asaskevich/govalidator"
+	"github.com/fiorix/go-smpp/smpp/pdu"
+	"github.com/fiorix/go-smpp/smpp/pdu/pdufield"
+	"github.com/fiorix/go-smpp/smpp/pdu/pdutext"
+	"github.com/sinchop/smpp/message"
 	"io"
 	"log"
 	"net"
 	"strconv"
 	"sync"
-
-	"github.com/asaskevich/govalidator"
-	"github.com/fiorix/go-smpp/smpp/pdu"
-	"github.com/fiorix/go-smpp/smpp/pdu/pdufield"
 )
 
 // HandlerFunc is the signature of a function passed to Server instances,
 // that is called when client PDU messages arrive.
-type HandlerFunc func(c Conn, m pdu.Body)
+type HandlerFunc func(c Conn, submit *message.ShortMessage) (*message.ShortMessageResp, error)
 
 type Account struct {
-	UserName string `valid: "required"`
-	Password string `valid: "required"`
+	UserName string `valid:"required"`
+	Password string `valid:"required"`
 }
 
 // Server is an SMPP server.
 type Server struct {
 	Accounts map[string]Account
-	SystemID string `valid: "required"`
-	Port     int    `valid: "required"`
+	SystemID string `valid:"required"`
+	Port     int    `valid:"required"`
 	TLS      *tls.Config
 	Handler  HandlerFunc
 
@@ -37,17 +38,23 @@ type Server struct {
 	l     net.Listener
 }
 
-func NewServer(systemID string, port int) *Server {
+func NewServer(systemID string, port int, handler HandlerFunc) *Server {
 	return &Server{
 		SystemID: systemID,
 		Port:     port,
 		Accounts: make(map[string]Account),
+		Handler:  handler,
 	}
 }
 
+func (server *Server) AddAccount(account *Account) {
+	server.Accounts[account.UserName] = *account
+}
+
 func newLocalListener(port int) net.Listener {
-	l, err := net.Listen("tcp", ":"+strconv.Itoa(port))
+	l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
 	if err == nil {
+		log.Println("Listen OK")
 		return l
 	}
 	if l, err = net.Listen("tcp6", "[::1]:"+strconv.Itoa(port)); err != nil {
@@ -65,6 +72,7 @@ func (srv *Server) Start() {
 	}
 	srv.l = newLocalListener(srv.Port)
 	go srv.Serve()
+	log.Printf("Server started %s", srv.Addr())
 }
 
 // Addr returns the local address of the server, or an empty string
@@ -89,11 +97,11 @@ func (srv *Server) Close() {
 func (srv *Server) Serve() {
 	for {
 		cli, err := srv.l.Accept()
-		log.Println("Got conn")
+
 		if err != nil {
 			break // on srv.l.Close
 		}
-
+		log.Printf("Got conn %s", cli.RemoteAddr().String())
 		c := newConn(cli)
 		srv.conns = append(srv.conns, c)
 		go srv.handle(c)
@@ -117,7 +125,7 @@ func (srv *Server) handle(c *conn) {
 			}
 			break
 		}
-		srv.Handler(c, p)
+		pduHandler(srv, c, p)
 	}
 }
 
@@ -155,4 +163,41 @@ func (srv *Server) auth(c *conn) error {
 	resp.Fields().Set(pdufield.SystemID, srv.SystemID)
 
 	return c.Write(resp)
+}
+
+func pduHandler(server *Server, cli Conn, m pdu.Body) {
+	log.Printf("Got PDU: %s", m.Header().ID)
+	var resp pdu.Body
+	switch m.Header().ID {
+	case pdu.EnquireLinkID:
+		resp = pdu.NewEnquireLinkRespSeq(m.Header().Seq)
+		break
+	case pdu.SubmitSMID:
+		sm := &message.ShortMessage{
+			Type: message.SubmitSM,
+			Src:  m.Fields()[pdufield.SourceAddr].String(),
+			Dst:  m.Fields()[pdufield.DestinationAddr].String(),
+		}
+
+		smResp, err := server.Handler(cli, sm)
+
+		if err != nil {
+			resp = pdu.NewSubmitSMResp()
+			resp.Header().Seq = m.Header().Seq
+			resp.Header().Status = pdu.Status(message.Status_UnknownError)
+			break
+		}
+
+		raw := m.Fields()[pdufield.ShortMessage]
+		//dcs := m.Fields()[pdufield.DataCoding]
+
+		text := pdutext.GSM7Packed(raw.Bytes())
+		log.Printf("%s", text)
+		resp = pdu.NewSubmitSMResp()
+		resp.Header().Seq = m.Header().Seq
+		resp.Header().Status = pdu.Status(smResp.Status)
+		resp.Fields().Set(pdufield.MessageID, smResp.MessageID)
+	}
+
+	cli.Write(resp)
 }
