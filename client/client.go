@@ -5,7 +5,6 @@ import (
 	"github.com/fiorix/go-smpp/smpp/pdu/pdufield"
 	"github.com/fiorix/go-smpp/smpp/pdu/pdutext"
 	"github.com/sinchop/smpp/message"
-	"log"
 )
 
 type Client struct {
@@ -46,10 +45,15 @@ func (client *Client) Bind() {
 
 func (client *Client) SendSubmitSM(sm *message.ShortMessage) (*message.ShortMessageResp, error) {
 	s := &smpp.ShortMessage{
-		Src:      sm.Src,
-		Dst:      sm.Dst,
-		Register: pdufield.DeliverySetting(sm.Register),
+		Src:           sm.Src,
+		SourceAddrNPI: sm.SourceAddrNPI,
+		SourceAddrTON: sm.SourceAddrTON,
+		Dst:           sm.Dst,
+		DestAddrNPI:   sm.DestAddrNPI,
+		DestAddrTON:   sm.DestAddrTON,
+		Register:      pdufield.DeliverySetting(sm.Register),
 	}
+
 	switch sm.DataCoding {
 	case message.DefaultType:
 		s.Text = pdutext.GSM7(sm.Text)
