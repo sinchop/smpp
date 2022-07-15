@@ -52,7 +52,7 @@ func (server *Server) AddAccount(account *Account) {
 }
 
 func newLocalListener(port int) net.Listener {
-	l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	l, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 	if err == nil {
 		log.Println("Listen OK")
 		return l
