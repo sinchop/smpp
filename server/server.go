@@ -4,16 +4,17 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/asaskevich/govalidator"
-	"github.com/fiorix/go-smpp/smpp/pdu"
-	"github.com/fiorix/go-smpp/smpp/pdu/pdufield"
-	"github.com/fiorix/go-smpp/smpp/pdu/pdutext"
-	"github.com/sinchop/smpp/message"
 	"io"
 	"log"
 	"net"
 	"strconv"
 	"sync"
+
+	"github.com/asaskevich/govalidator"
+	"github.com/fiorix/go-smpp/smpp/pdu"
+	"github.com/fiorix/go-smpp/smpp/pdu/pdufield"
+	"github.com/fiorix/go-smpp/smpp/pdu/pdutext"
+	"github.com/sinchop/smpp/message"
 )
 
 // HandlerFunc is the signature of a function passed to Server instances,
@@ -197,6 +198,9 @@ func pduHandler(server *Server, cli Conn, m pdu.Body) {
 		resp.Header().Seq = m.Header().Seq
 		resp.Header().Status = pdu.Status(smResp.Status)
 		resp.Fields().Set(pdufield.MessageID, smResp.MessageID)
+		break
+	case pdu.UnbindID:
+		resp = pdu.NewUnbindResp()
 	}
 
 	cli.Write(resp)
