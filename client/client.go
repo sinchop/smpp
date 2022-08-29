@@ -45,6 +45,14 @@ func (client *Client) Bind() {
 	}()
 }
 
+func (client *Client) Unbind() {
+	err := client.tx.Close()
+	if err != nil {
+		log.Println("Failed to close connection", err)
+		return
+	}
+}
+
 func (client *Client) SendSubmitSM(sm *message.ShortMessage) (*message.ShortMessageResp, error) {
 	s := &smpp.ShortMessage{
 		Src:           sm.Src,
